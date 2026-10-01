@@ -461,7 +461,7 @@ function renderUnitChips() {
         </div>`).join("");
     return;
   }
-  const chips = units.map(u => ({ name: u.name, emoji: u.emoji, color: u.color, key: u.name }));
+  const chips = units.map(u => ({ name: u.name, emoji: u.emoji, color: u.color, key: u.name, logo: u.logo || null }));
   if (state.doc === "sc") chips.push({ name: "整体时序", emoji: "🗓", color: "#ffb84d", key: TL_KEY });
   chips.push({ name: "全部组合", emoji: "✨", color: "#c9cfea", key: "all" });
   unitChipsEl.innerHTML = chips.map(c => `
