@@ -314,6 +314,17 @@
   }
   .player-frame { position: relative; padding-top: 56.25%; background: #000; }
   .player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .pn-btn {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+    width: 42px; height: 56px; border-radius: 12px; cursor: pointer; font-size: 26px; line-height: 1;
+    background: rgba(10,12,24,.55); border: 1px solid rgba(255,255,255,.28); color: #fff;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    display: grid; place-items: center; transition: all .2s; opacity: .85;
+  }
+  .pn-btn:hover:not(.disabled) { opacity: 1; background: rgba(10,12,24,.75); transform: translateY(-50%) scale(1.06); }
+  .pn-btn.prev { left: 10px; }
+  .pn-btn.next { right: 10px; }
+  .pn-btn.disabled { opacity: .18; cursor: default; }
   .player-info {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 13px 18px; background: var(--panel-solid); border-top: 1px solid var(--line);
@@ -687,7 +698,12 @@ function handleDrawerClick(e) {
     return;
   }
   const card = e.target.closest(".story-card[data-bv]");
-  if (card) play(card.dataset.bv, +card.dataset.page, true, card.dataset.label);
+  if (card && i) {
+    const pl = drawerEntries(u, i)
+      .filter(en => en.bv)
+      .map(en => ({ bv: en.bv, page: en.page || 1, label: i.name + " · " + en.title }));
+    play(card.dataset.bv, +card.dataset.page, true, card.dataset.label, pl);
+  }
 }
 
 /* 首屏入场动画播完后关闭重渲动画（避免展开/收起时全网格闪烁） */
@@ -728,14 +744,33 @@ function renderProgress() {
 document.addEventListener("keydown", e => { if (e.key === "Escape" && state.expanded) { state.expanded = null; renderIdols(); } });
 
 /* ---------- 播放 ---------- */
+function switchEp(dir) {
+  if (!state.playlist) return;
+  const next = state.playlist[state.plIndex + dir];
+  if (!next) return;
+  play(next.bv, next.page || 1, false, next.label, state.playlist);
+}
+document.addEventListener("keydown", e => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  if (!state.playlist || !document.getElementById("player-section").classList.contains("show")) return;
+  if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  switchEp(e.key === "ArrowLeft" ? -1 : 1);
+});
 function toggleWatched(bv, page) {
   const key = bv + ":" + page;
   if (watchedSet.has(key)) watchedSet.delete(key); else watchedSet.add(key);
   try { localStorage.setItem(LS_WATCHED, JSON.stringify([...watchedSet])); } catch (e) {}
 }
 
-function play(bvid, page, scroll, label) {
+function play(bvid, page, scroll, label, playlist) {
   state.cur = bvid; state.curPage = page; state.curLabel = label;
+  if (playlist) {
+    state.playlist = playlist;
+    state.plIndex = playlist.findIndex(p => p.bv === bvid && (p.page || 1) === page);
+  } else if (!state.playlist || state.plIndex < 0 ||
+             !(state.playlist[state.plIndex] && state.playlist[state.plIndex].bv === bvid)) {
+    state.playlist = null; state.plIndex = -1;   // 无序列上下文则不显示切换
+  }
   document.getElementById("player-section").classList.add("show");
 
   const readKey = bvid + ":" + page;
@@ -769,6 +804,22 @@ function play(bvid, page, scroll, label) {
   iframe.setAttribute("scrolling", "no");
   iframe.setAttribute("allow", "autoplay; fullscreen; encrypted-media");
   frame.appendChild(iframe);
+
+  // 上一集 / 下一集
+  const frameEl = document.getElementById("player-frame");
+  frameEl.querySelectorAll(".pn-btn").forEach(b => b.remove());
+  if (state.playlist && state.plIndex >= 0) {
+    const hasPrev = state.plIndex > 0, hasNext = state.plIndex < state.playlist.length - 1;
+    const mk = (dir, enabled, title) => `
+      <button class="pn-btn ${dir} ${enabled ? "" : "disabled"}" title="${title}"
+        ${enabled ? "" : "disabled"}>${dir === "prev" ? "‹" : "›"}</button>`;
+    frameEl.insertAdjacentHTML("beforeend",
+      mk("prev", hasPrev, "上一集（←）") + mk("next", hasNext, "下一集（→）"));
+    frameEl.querySelector(".pn-btn.prev").onclick = () => switchEp(-1);
+    frameEl.querySelector(".pn-btn.next").onclick = () => switchEp(1);
+    const ti = document.getElementById("cur-title");
+    if (ti) ti.title = `${state.plIndex + 1} / ${state.playlist.length}`;
+  }
 
   watchedSet.add(bvid + ":" + page);
   try { localStorage.setItem(LS_WATCHED, JSON.stringify([...watchedSet])); } catch (e) {}
@@ -826,7 +877,15 @@ timelineBodyEl.addEventListener("click", e => {
     return;
   }
   const card = e.target.closest(".story-card[data-bv]");
-  if (card) play(card.dataset.bv, +card.dataset.page, true, card.dataset.label);
+  if (card) {
+    // 时序播放列表：当前视图全部年份按顺序合并
+    const view = timelineArtView();
+    const pl = Object.keys(view.years).sort()
+      .flatMap(y => view.years[y])
+      .filter(en => en.bv)
+      .map(en => ({ bv: en.bv, page: en.page || 1, label: (en.date + " ") + en.title }));
+    play(card.dataset.bv, +card.dataset.page, true, card.dataset.label, pl);
+  }
 });
 
 /* ---------- 总渲染分发 ---------- */
